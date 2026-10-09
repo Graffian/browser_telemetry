@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Browser Telemetry</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background: #0f1115;
+    color: #e6e6e6;
+    padding: 24px;
+  }
+  .wrap {
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 40px 8px;
+  }
+  h1 { font-size: 28px; margin: 0 0 12px; text-align: center; letter-spacing: -0.5px; }
+  .lead {
+    color: #9aa3b8;
+    font-size: 14px;
+    line-height: 1.6;
+    margin: 0 auto 14px;
+    max-width: 560px;
+    text-align: center;
+  }
+  .lead strong { color: #e6e6e6; }
+  #run {
+    display: block;
+    margin: 8px auto 28px;
+    padding: 10px 26px;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: #fff;
+    background: #e11d48;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  #run:hover { background: #be123c; }
+  #run:disabled { background: #7f1d1d; cursor: default; }
+  #out { margin-top: 8px; }
+  .row {
+    display: flex;
+    gap: 12px;
+    padding: 10px 12px;
+    border-bottom: 1px solid #23262e;
+  }
+  .row:nth-child(odd) { background: #151821; }
+  .k { color: #8b93a7; min-width: 180px; flex-shrink: 0; }
+  .v { color: #e6e6e6; word-break: break-word; }
+  .section {
+    margin: 20px 0 6px;
+    color: #e11d48;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+  footer {
+    max-width: 680px;
+    margin: 24px auto 0;
+    color: #6b7288;
+    font-size: 12px;
+    line-height: 1.7;
+    text-align: center;
+  }
+  #out:empty { display: none; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Browser Telemetry</h1>
+    <p class="lead">
+      Your browser knows a surprising amount about your machine.
+      <strong>Click below</strong> to reveal your GPU, CPU, memory, battery,
+      screen, network, and more. Nothing is sent anywhere &mdash; it all runs
+      locally on your device.
+    </p>
+    <button id="run">CLICK HERE</button>
+    <div id="out"></div>
+  </div>
+  <footer>
+    Some values are intentionally hidden or rounded by browsers for privacy, so a
+    few fields may read "unavailable". Chromium-based browsers (Chrome, Edge)
+    expose the most; Firefox and Safari reveal less.
+  </footer>
+
+<script>
+function getGPU() {
+  const out = { vendor: "unavailable", renderer: "unavailable" };
+  try {
+    const canvas = document.createElement("canvas");
+    const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+    if (gl) {
+      const ext = gl.getExtension("WEBGL_debug_renderer_info");
+      if (ext) {
+        out.vendor = gl.getParameter(ext.UNMASKED_VENDOR_WEBGL) || out.vendor;
+        out.renderer = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || out.renderer;
+      } else {
+        out.vendor = gl.getParameter(gl.VENDOR) || out.vendor;
+        out.renderer = gl.getParameter(gl.RENDERER) || out.renderer;
+      }
+    }
+  } catch (e) {}
+  return out;
+}
+
+function getBattery() {
+  if (!navigator.getBattery) return Promise.resolve(null);
+  return navigator.getBattery().then(b => ({
+    charging: b.charging,
+    level: Math.round(b.level * 100) + "%",
+    chargingTime: b.chargingTime === Infinity ? "n/a" : b.chargingTime + "s",
+    dischargingTime: b.dischargingTime === Infinity ? "n/a" : b.dischargingTime + "s"
+  })).catch(() => null);
+}
+
+function getConnection() {
+  const c = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (!c) return null;
+  return {
+    type: c.effectiveType || "n/a",
+    downlink: c.downlink != null ? c.downlink + " Mbps" : "n/a",
+    rtt: c.rtt != null ? c.rtt + " ms" : "n/a",
+    saveData: c.saveData
+  };
+}
+
+function collect() {
+  const gpu = getGPU();
+  const mem = navigator.deviceMemory;
+  const data = {
+    "Hardware": {
+      "CPU cores (hardwareConcurrency)": navigator.hardwareConcurrency,
+      "Device memory (GB)": mem != null ? mem : "unavailable",
+      "GPU vendor": gpu.vendor,
+      "GPU renderer": gpu.renderer,
+      "Platform": navigator.platform
+    },
+    "Display": {
+      "Screen resolution": screen.width + " x " + screen.height,
+      "Available": screen.availWidth + " x " + screen.availHeight,
+      "Viewport": window.innerWidth + " x " + window.innerHeight,
+      "Pixel ratio": window.devicePixelRatio,
+      "Color depth": screen.colorDepth + "-bit",
+      "Touch points": navigator.maxTouchPoints
+    },
+    "System": {
+      "Language": navigator.language,
+      "Languages": (navigator.languages || []).join(", "),
+      "Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone,
+      "Timezone offset (min)": new Date().getTimezoneOffset(),
+      "Online": navigator.onLine,
+      "Cookies enabled": navigator.cookieEnabled,
+      "Do Not Track": navigator.doNotTrack,
+      "User agent": navigator.userAgent
+    }
+  };
+  const conn = getConnection();
+  if (conn) data["Network"] = conn;
+  return data;
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+function render(data, battery) {
+  const out = document.getElementById("out");
+  let html = "";
+  for (const section in data) {
+    html += '<div class="section">' + esc(section) + "</div>";
+    for (const k in data[section]) {
+      html += '<div class="row"><div class="k">' + esc(k) + '</div><div class="v">' + esc(data[section][k]) + "</div></div>";
+    }
+  }
+  if (battery) {
+    html += '<div class="section">Battery</div>';
+    for (const k in battery) {
+      html += '<div class="row"><div class="k">' + esc(k) + '</div><div class="v">' + esc(battery[k]) + "</div></div>";
+    }
+  } else {
+    html += '<div class="section">Battery</div><div class="row"><div class="k">Status</div><div class="v">unavailable</div></div>';
+  }
+  out.innerHTML = html;
+}
+
+document.getElementById("run").addEventListener("click", function () {
+  const btn = this;
+  btn.disabled = true;
+  btn.textContent = "COLLECTING...";
+  getBattery().then(battery => {
+    render(collect(), battery);
+    btn.disabled = false;
+    btn.textContent = "CLICK HERE";
+  });
+});
+</script>
+</body>
+</html>
