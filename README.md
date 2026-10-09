@@ -5,6 +5,10 @@ it's running on — GPU, CPU, memory, battery, screen, network, and more.
 
 Everything runs locally in the browser. Nothing is collected or sent anywhere.
 
+## Live
+
+https://graffian.github.io/browser_telemetry/
+
 ## How to use
 
 1. Go to the website.
